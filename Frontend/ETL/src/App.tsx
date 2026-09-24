@@ -13,7 +13,19 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<CleaningReport | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
+  const [csvData, setCsvData] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  const [rules, setRules] = useState({
+    removeDuplicates: true,
+    handleMissing: true,
+    standardizeText: true,
+    validateRanges: true
+  });
+
+  const handleRuleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRules({ ...rules, [e.target.name]: e.target.checked });
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -30,42 +42,40 @@ function App() {
     setLoading(true);
     setReport(null);
     setPreviewData([]);
+    setCsvData(null);
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('rules', JSON.stringify(rules));
 
     try {
-      // In a real scenario, this would be an actual API call to the Flask backend:
-      // const response = await fetch('http://localhost:5000/api/etl/process', { method: 'POST', body: formData });
-      // if (!response.ok) throw new Error("Failed to process data.");
-      // const data = await response.json();
+      const response = await fetch('http://localhost:5000/api/etl/process', { method: 'POST', body: formData });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process data.");
+      }
+      const data = await response.json();
       
-      // Simulating a backend response for demonstration
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const mockData = {
-        report: {
-          totalRows: 50,
-          duplicatesRemoved: 2,
-          nullsHandled: 4,
-          invalidDataCorrected: 5,
-        },
-        preview: [
-          { student_id: 1001, name: "Ayush Bhardwaj", email: "ayush@gmail.com", age: 20, department: "IT", marks: 85, city: "Mumbai", grade: "A" },
-          { student_id: 1002, name: "Rahul Sharma", email: "rahul@gmail.com", age: 21, department: "IT", marks: 78, city: "Mumbai", grade: "B" },
-          { student_id: 1003, name: "Priya Patil", email: "priya@gmail.com", age: 20, department: "Computer Engineering", marks: 92, city: "Pune", grade: "A+" },
-          { student_id: 1004, name: "Amit Shah", email: "amit@gmail.com", age: 20, department: "IT", marks: 100, city: "Mumbai", grade: "A+" },
-          { student_id: 1005, name: "Neha Joshi", email: "neha@gmail.com", age: 19, department: "Computer Engineering", marks: 88, city: "Pune", grade: "A" },
-        ]
-      };
-      
-      setReport(mockData.report);
-      setPreviewData(mockData.preview);
+      setReport(data.report);
+      setPreviewData(data.preview);
+      setCsvData(data.csvData);
     } catch (err: any) {
       setError(err.message || "An error occurred during processing.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDownload = () => {
+    if (!csvData) return;
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'cleaned_dataset.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Helper to safely format grade class
@@ -77,100 +87,140 @@ function App() {
     <div className="container">
       <header className="header">
         <h1>CleanETL Pipeline</h1>
-        <p>Extract, Transform, and Load your data seamlessly.</p>
+        <p>Extract, Transform, Load, and Export your data seamlessly.</p>
       </header>
 
-      <main className="main-content">
-        <section className="upload-section card">
-          <h2>1. Upload Raw Dataset</h2>
-          <div className="upload-control">
-            <input 
-              type="file" 
-              accept=".csv" 
-              onChange={handleFileChange} 
-              className="file-input"
-            />
-            <button 
-              onClick={handleUpload} 
-              disabled={!file || loading}
-              className="btn-primary"
-            >
-              {loading ? "Processing Pipeline..." : "Run ETL Pipeline"}
-            </button>
+      <div className="layout-grid">
+        {/* Left Column: Configuration */}
+        <aside className="config-column">
+          <div className="card sticky-card">
+            <h2>1. Configuration</h2>
+            
+            <div className="rules-section">
+              <h3>Cleaning Rules</h3>
+              <label className="checkbox-label">
+                <input type="checkbox" name="removeDuplicates" checked={rules.removeDuplicates} onChange={handleRuleChange} />
+                Remove Duplicates
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" name="handleMissing" checked={rules.handleMissing} onChange={handleRuleChange} />
+                Handle Missing Values
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" name="standardizeText" checked={rules.standardizeText} onChange={handleRuleChange} />
+                Standardize Text (Casing, Spaces)
+              </label>
+              <label className="checkbox-label">
+                <input type="checkbox" name="validateRanges" checked={rules.validateRanges} onChange={handleRuleChange} />
+                Validate Ranges (Ages, Marks)
+              </label>
+            </div>
+
+            <div className="upload-section">
+              <h3>Upload Dataset</h3>
+              <input 
+                type="file" 
+                accept=".csv" 
+                onChange={handleFileChange} 
+                className="file-input"
+              />
+              <button 
+                onClick={handleUpload} 
+                disabled={!file || loading}
+                className="btn-primary full-width"
+              >
+                {loading ? "Processing..." : "Run Pipeline"}
+              </button>
+            </div>
+            {error && <div className="error-msg">{error}</div>}
           </div>
-          {error && <div className="error-msg">{error}</div>}
-        </section>
+        </aside>
 
-        {report && (
-          <section className="report-section card">
-            <h2>2. Cleaning Report</h2>
-            <div className="stats-grid">
-              <div className="stat-box">
-                <span className="stat-value">{report.totalRows}</span>
-                <span className="stat-label">Total Rows Processed</span>
-              </div>
-              <div className="stat-box">
-                <span className="stat-value">{report.duplicatesRemoved}</span>
-                <span className="stat-label">Duplicates Removed</span>
-              </div>
-              <div className="stat-box">
-                <span className="stat-value">{report.nullsHandled}</span>
-                <span className="stat-label">Missing Values Fixed</span>
-              </div>
-              <div className="stat-box">
-                <span className="stat-value">{report.invalidDataCorrected}</span>
-                <span className="stat-label">Invalid Data Corrected</span>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {previewData.length > 0 && (
-          <section className="preview-section card">
-            <h2>3. Cleaned Data Preview</h2>
-            <div className="table-responsive">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Age</th>
-                    <th>Department</th>
-                    <th>Marks</th>
-                    <th>City</th>
-                    <th>Grade</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewData.map((row, idx) => (
-                    <tr key={idx}>
-                      <td>{row.student_id}</td>
-                      <td>{row.name}</td>
-                      <td>{row.email}</td>
-                      <td>{row.age}</td>
-                      <td>{row.department}</td>
-                      <td>{row.marks}</td>
-                      <td>{row.city}</td>
-                      <td>
-                        <span className={`grade grade-${getGradeClass(row.grade)}`}>
-                          {row.grade}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="success-msg">
-              <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        {/* Right Column: Results */}
+        <main className="results-column">
+          {!report && !loading && (
+            <div className="empty-state card">
+              <svg width="64" height="64" fill="none" stroke="#cbd5e1" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              Data successfully cleaned, transformed, and loaded into MySQL database.
-            </p>
-          </section>
-        )}
-      </main>
+              <p>Upload a dataset to see the cleaning report here.</p>
+            </div>
+          )}
+
+          {report && (
+            <div className="card mb-2">
+              <h2>2. Cleaning Report</h2>
+              <div className="stats-grid">
+                <div className="stat-box">
+                  <span className="stat-value">{report.totalRows}</span>
+                  <span className="stat-label">Rows Processed</span>
+                </div>
+                <div className="stat-box">
+                  <span className="stat-value">{report.duplicatesRemoved}</span>
+                  <span className="stat-label">Duplicates Removed</span>
+                </div>
+                <div className="stat-box">
+                  <span className="stat-value">{report.nullsHandled}</span>
+                  <span className="stat-label">Missing Values Fixed</span>
+                </div>
+                <div className="stat-box">
+                  <span className="stat-value">{report.invalidDataCorrected}</span>
+                  <span className="stat-label">Invalid Data Corrected</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {previewData.length > 0 && (
+            <div className="card">
+              <div className="preview-header">
+                <h2>3. Cleaned Data Preview</h2>
+                <button onClick={handleDownload} className="btn-secondary">
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download CSV
+                </button>
+              </div>
+              
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {Object.keys(previewData[0] || {}).map((key) => (
+                        <th key={key}>{key.replace(/_/g, ' ').toUpperCase()}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.map((row, idx) => (
+                      <tr key={idx}>
+                        {Object.keys(row).map((key) => (
+                          <td key={key}>
+                            {key === 'grade' && row[key] ? (
+                              <span className={`grade grade-${getGradeClass(row[key])}`}>
+                                {row[key]}
+                              </span>
+                            ) : (
+                              String(row[key] ?? '')
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="success-msg mt-2">
+                <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Data cleaned and saved to MySQL. Ready for download.
+              </p>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
